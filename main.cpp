@@ -3,6 +3,8 @@
 #include <string>
 #include <iomanip>
 #include <algorithm>
+#include <sstream>
+#include <ctime>
 using namespace std;
 
 struct Payment {
@@ -26,12 +28,82 @@ struct Student {
     string section;
 };
 
+struct Notification {
+    int studentId;
+    string message;
+    string dueDate;
+};
+
+struct AuditEntry {
+    string action;
+    int studentId;
+    string officer;
+    double amount;
+    string date;
+};
+
 class FeeManager {
 private:
     vector<Student> students;
     vector<FeeChallan> challans;
     vector<Payment> payments;
+    vector<Notification> notifications;
+    vector<AuditEntry> auditLog;
     double semesterFee;
+    int notificationLeadDays;
+
+    int dateToSerial(const string& date) const {
+        int year, month, day;
+        char first, second;
+
+        if (date.size() != 10)
+            return -1;
+
+        stringstream stream(date);
+        stream >> year >> first >> month >> second >> day;
+
+        if (!stream || first != '-' || second != '-')
+            return -1;
+
+        tm value = {};
+        value.tm_year = year - 1900;
+        value.tm_mon = month - 1;
+        value.tm_mday = day;
+        value.tm_hour = 12;
+
+        time_t timestamp = mktime(&value);
+        if (timestamp == -1)
+            return -1;
+
+        return static_cast<int>(timestamp / 86400);
+    }
+
+    bool isValidDate(const string& date) const {
+        return dateToSerial(date) != -1;
+    }
+
+    int daysUntil(const string& fromDate, const string& dueDate) const {
+        int from = dateToSerial(fromDate);
+        int due = dateToSerial(dueDate);
+
+        if (from == -1 || due == -1)
+            return -1;
+
+        return due - from;
+    }
+
+    string nextPaymentReference(int studentId) const {
+        int number = 1;
+
+        for (const auto& payment : payments) {
+            if (payment.reference.rfind(
+                    to_string(studentId) + "-P", 0) == 0) {
+                number++;
+            }
+        }
+
+        return to_string(studentId) + "-P" + to_string(number);
+    }
 
     Student* findStudent(int id) {
         for (auto& student : students) {
@@ -66,7 +138,7 @@ private:
     }
 
 public:
-    FeeManager() : semesterFee(85000.0) {
+    FeeManager() : semesterFee(85000.0), notificationLeadDays(7) {
         students.push_back({101, "Ali", "BSE-2B"});
         students.push_back({102, "Ahmed", "BSE-2B"});
         students.push_back({103, "Hamza", "BSE-2B"});
@@ -228,23 +300,191 @@ public:
         challan->paid =
             (challan->paidAmount >= challan->totalFee);
 
-        int paymentNumber = 1;
-
-        for (const auto& payment : payments) {
-            if (payment.reference.rfind(
-                    to_string(studentId) + "-P", 0) == 0) {
-                paymentNumber++;
-            }
-        }
-
-        string reference =
-            to_string(studentId) + "-P" + to_string(paymentNumber);
+        string reference = nextPaymentReference(studentId);
 
         payments.push_back({date, amount, reference});
 
         cout << "Payment recorded successfully.\n";
         cout << "Remaining balance: " << fixed << setprecision(2)
              << challan->totalFee - challan->paidAmount << "\n";
+    }
+
+    void markFeePaid(int studentId,
+                     const string& semester,
+                     const string& paymentDate,
+                     const string& officer) {
+        Student* student = findStudent(studentId);
+        FeeChallan* challan = findChallan(studentId, semester);
+
+        if (student == nullptr) {
+            cout << "Student not found.\n";
+            return;
+        }
+
+        if (challan == nullptr) {
+            cout << "Challan not found.\n";
+            return;
+        }
+
+        double outstanding =
+            max(0.0, challan->totalFee - challan->paidAmount);
+
+        if (outstanding == 0) {
+            cout << "Fee is already fully paid.\n";
+            return;
+        }
+
+        if (!isValidDate(paymentDate)) {
+            cout << "Invalid payment date. Use YYYY-MM-DD.\n";
+            return;
+        }
+
+        if (officer.empty()) {
+            cout << "Officer name cannot be empty.\n";
+            return;
+        }
+
+        challan->paidAmount = challan->totalFee;
+        challan->paid = true;
+
+        payments.push_back({
+            paymentDate,
+            outstanding,
+            nextPaymentReference(studentId)
+        });
+
+        auditLog.push_back({
+            "FEE_MARKED_PAID",
+            studentId,
+            officer,
+            outstanding,
+            paymentDate
+        });
+
+        cout << "Fee marked as paid successfully.\n";
+        cout << "Student: " << student->name << "\n";
+        cout << "Amount recorded: " << fixed << setprecision(2)
+             << outstanding << "\n";
+        cout << "Outstanding balance: 0.00\n";
+        cout << "Verified by: " << officer << "\n";
+    }
+
+    void generateDueNotifications(const string& currentDate) {
+        if (!isValidDate(currentDate)) {
+            cout << "Invalid current date. Use YYYY-MM-DD.\n";
+            return;
+        }
+
+        int created = 0;
+
+        for (const auto& challan : challans) {
+            if (challan.paid)
+                continue;
+
+            int daysRemaining = daysUntil(currentDate, challan.dueDate);
+
+            if (daysRemaining < 0 ||
+                daysRemaining > notificationLeadDays) {
+                continue;
+            }
+
+            bool alreadySent = false;
+
+            for (const auto& notification : notifications) {
+                if (notification.studentId == challan.studentId &&
+                    notification.dueDate == challan.dueDate) {
+                    alreadySent = true;
+                    break;
+                }
+            }
+
+            if (alreadySent)
+                continue;
+
+            Student* student = findStudent(challan.studentId);
+            if (student == nullptr)
+                continue;
+
+            notifications.push_back({
+                challan.studentId,
+                "Fee of " +
+                to_string(static_cast<int>(
+                    challan.totalFee - challan.paidAmount)) +
+                " is due on " + challan.dueDate,
+                challan.dueDate
+            });
+
+            created++;
+        }
+
+        cout << "\nDue-date notification check completed.\n";
+        cout << "Notifications created: " << created << "\n";
+        cout << "Reminder window: " << notificationLeadDays
+             << " day(s)\n";
+    }
+
+    void configureNotificationDays() {
+        int days;
+
+        cout << "Enter number of days before due date: ";
+        cin >> days;
+
+        if (days < 0) {
+            cout << "Number of days cannot be negative.\n";
+            return;
+        }
+
+        notificationLeadDays = days;
+        cout << "Notification window set to "
+             << notificationLeadDays << " day(s).\n";
+    }
+
+    void viewNotifications(int studentId) const {
+        Student* student = const_cast<FeeManager*>(this)->findStudent(studentId);
+
+        if (student == nullptr) {
+            cout << "Student not found.\n";
+            return;
+        }
+
+        cout << "\n====== NOTIFICATIONS ======\n";
+        cout << "Student: " << student->name << "\n";
+
+        bool found = false;
+
+        for (const auto& notification : notifications) {
+            if (notification.studentId != studentId)
+                continue;
+
+            cout << "- " << notification.message << "\n";
+            found = true;
+        }
+
+        if (!found)
+            cout << "No notifications found.\n";
+
+        cout << "============================\n";
+    }
+
+    void viewAuditLog() const {
+        cout << "\n========== AUDIT LOG ==========\n";
+
+        if (auditLog.empty()) {
+            cout << "No audit entries found.\n";
+            cout << "===============================\n";
+            return;
+        }
+
+        for (const auto& entry : auditLog) {
+            cout << "Action: " << entry.action
+                 << " | Student: " << entry.studentId
+                 << " | Officer: " << entry.officer
+                 << " | Amount: " << fixed << setprecision(2)
+                 << entry.amount
+                 << " | Date: " << entry.date << "\n";
+        }
+
+        cout << "===============================\n";
     }
 
     void listStudents() const {
@@ -268,6 +508,11 @@ public:
             cout << "4. View Payment History\n";
             cout << "5. View Outstanding Balance\n";
             cout << "6. Record Partial Payment\n";
+            cout << "7. Mark Fee as Paid\n";
+            cout << "8. Configure Notification Window\n";
+            cout << "9. Generate Due-Date Notifications\n";
+            cout << "10. View Notifications\n";
+            cout << "11. View Audit Log\n";
             cout << "0. Exit\n";
             cout << "Choose an option: ";
             cin >> choice;
@@ -342,6 +587,49 @@ public:
                 cin >> date;
 
                 recordPartialPayment(id, semester, amount, date);
+            }
+            else if (choice == 7) {
+                int id;
+                string semester;
+                string paymentDate;
+                string officer;
+
+                cout << "Enter student ID: ";
+                cin >> id;
+
+                cout << "Enter semester: ";
+                cin.ignore();
+                getline(cin, semester);
+
+                cout << "Enter payment date (YYYY-MM-DD): ";
+                getline(cin, paymentDate);
+
+                cout << "Enter verifying officer: ";
+                getline(cin, officer);
+
+                markFeePaid(id, semester, paymentDate, officer);
+            }
+            else if (choice == 8) {
+                configureNotificationDays();
+            }
+            else if (choice == 9) {
+                string currentDate;
+
+                cout << "Enter current date (YYYY-MM-DD): ";
+                cin >> currentDate;
+
+                generateDueNotifications(currentDate);
+            }
+            else if (choice == 10) {
+                int id;
+
+                cout << "Enter student ID: ";
+                cin >> id;
+
+                viewNotifications(id);
+            }
+            else if (choice == 11) {
+                viewAuditLog();
             }
             else if (choice != 0) {
                 cout << "Invalid option.\n";
