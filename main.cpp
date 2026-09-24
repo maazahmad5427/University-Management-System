@@ -156,6 +156,16 @@ public:
     }
 
     void generateChallans(const string& semester, const string& dueDate) {
+        if (semester.empty()) {
+            cout << "Semester cannot be empty.\n";
+            return;
+        }
+
+        if (!isValidDate(dueDate)) {
+            cout << "Invalid due date. Use YYYY-MM-DD.\n";
+            return;
+        }
+
         int created = 0;
         int skipped = 0;
 
@@ -294,6 +304,11 @@ public:
 
         if (amount > outstanding) {
             cout << "Payment exceeds outstanding balance.\n";
+            return;
+        }
+
+        if (!isValidDate(date)) {
+            cout << "Invalid payment date. Use YYYY-MM-DD.\n";
             return;
         }
 
@@ -758,13 +773,23 @@ private:
                 return false;
         }
 
+        int year = stoi(value.substr(0, 4));
         int month = stoi(value.substr(5, 2));
         int day = stoi(value.substr(8, 2));
 
-        if (month < 1 || month > 12 || day < 1 || day > 31)
+        if (year < 1 || month < 1 || month > 12 || day < 1)
             return false;
 
-        return true;
+        int daysInMonth[] = {31, 28, 31, 30, 31, 30,
+                             31, 31, 30, 31, 30, 31};
+
+        bool leapYear = (year % 400 == 0) ||
+                        (year % 4 == 0 && year % 100 != 0);
+
+        if (leapYear)
+            daysInMonth[1] = 29;
+
+        return day <= daysInMonth[month - 1];
     }
 
     bool examsClash(const ExamEntry& first,
@@ -969,11 +994,13 @@ public:
                 return;
             }
 
-            exam.published = false;
+            exam.published = wasPublished;
 
             if (wasPublished) {
-                cout << "Published exam changed. It is now a draft.\n";
-                cout << "Publish it again to notify affected students.\n";
+                notifyStudentsAboutExam(exam, true);
+                notifyControllerAboutClashes();
+                cout << "Published exam updated successfully.\n";
+                cout << "Affected students were notified.\n";
             }
             else {
                 cout << "Exam draft updated successfully.\n";
@@ -1166,9 +1193,24 @@ public:
                     continue;
                 }
 
-                results.push_back({
-                    studentId, course, marks, maximumMarks, false
-                });
+                bool updated = false;
+
+                for (auto& result : results) {
+                    if (result.studentId == studentId &&
+                        result.course == course &&
+                        !result.finalized) {
+                        result.marks = marks;
+                        result.maximumMarks = maximumMarks;
+                        updated = true;
+                        break;
+                    }
+                }
+
+                if (!updated) {
+                    results.push_back({
+                        studentId, course, marks, maximumMarks, false
+                    });
+                }
 
                 imported++;
             }
@@ -1214,15 +1256,17 @@ public:
                     return;
                 }
 
+                double newMarks;
                 cout << "New marks: ";
-                cin >> result.marks;
+                cin >> newMarks;
 
-                if (result.marks < 0 ||
-                    result.marks > result.maximumMarks) {
+                if (newMarks < 0 ||
+                    newMarks > result.maximumMarks) {
                     cout << "Invalid marks.\n";
                     return;
                 }
 
+                result.marks = newMarks;
                 cout << "Result corrected successfully.\n";
                 return;
             }
