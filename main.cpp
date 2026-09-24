@@ -54,16 +54,32 @@ private:
     int notificationLeadDays;
 
     int dateToSerial(const string& date) const {
-        int year, month, day;
-        char first, second;
-
-        if (date.size() != 10)
+        if (date.size() != 10 || date[4] != '-' || date[7] != '-')
             return -1;
 
-        stringstream stream(date);
-        stream >> year >> first >> month >> second >> day;
+        for (int i = 0; i < 10; i++) {
+            if (i == 4 || i == 7)
+                continue;
 
-        if (!stream || first != '-' || second != '-')
+            if (date[i] < '0' || date[i] > '9')
+                return -1;
+        }
+
+        int year = stoi(date.substr(0, 4));
+        int month = stoi(date.substr(5, 2));
+        int day = stoi(date.substr(8, 2));
+
+        if (year < 1 || month < 1 || month > 12 || day < 1)
+            return -1;
+
+        int daysInMonth[] = {31,28,31,30,31,30,31,31,30,31,30,31};
+        bool leapYear = (year % 400 == 0) ||
+                        (year % 4 == 0 && year % 100 != 0);
+
+        if (leapYear)
+            daysInMonth[1] = 29;
+
+        if (day > daysInMonth[month - 1])
             return -1;
 
         tm value = {};
@@ -103,7 +119,11 @@ private:
             }
         }
 
-        return to_string(studentId) + "-P" + to_string(number);
+        string numberText = to_string(number);
+        if (numberText.size() < 3)
+            numberText = string(3 - numberText.size(), '0') + numberText;
+
+        return to_string(studentId) + "-P" + numberText;
     }
 
     Student* findStudent(int id) {
