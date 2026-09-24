@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <sstream>
 #include <ctime>
+#include <fstream>
 using namespace std;
 
 struct Payment {
@@ -639,8 +640,743 @@ public:
     }
 };
 
+
+struct ExamEntry {
+    string course;
+    string date;
+    string time;
+    string venue;
+    bool published;
+};
+
+struct ExamNotification {
+    int studentId;
+    string message;
+};
+
+struct ExamResult {
+    int studentId;
+    string course;
+    double marks;
+    double maximumMarks;
+    bool finalized;
+};
+
+class ExamManager {
+private:
+    vector<Student> students;
+    vector<ExamEntry> exams;
+    vector<ExamNotification> notifications;
+    vector<ExamResult> results;
+
+    vector<string> getCourses(int studentId) const {
+        if (studentId == 101)
+            return {"OOP", "DS", "COAL"};
+        if (studentId == 102)
+            return {"OOP", "DS", "COAL"};
+        if (studentId == 103)
+            return {"OOP", "DS", "COAL"};
+        if (studentId == 104)
+            return {"OOP", "DS", "COAL"};
+        return {};
+    }
+
+    bool isEnrolled(int studentId, const string& course) const {
+        vector<string> courses = getCourses(studentId);
+
+        for (const auto& item : courses) {
+            if (item == course)
+                return true;
+        }
+
+        return false;
+    }
+
+    Student* findStudent(int id) {
+        for (auto& student : students) {
+            if (student.id == id)
+                return &student;
+        }
+
+        return nullptr;
+    }
+
+    int timeToMinutes(const string& value) const {
+        if (value.size() != 5 || value[2] != '-')
+            return -1;
+
+        return -1;
+    }
+
+    int parseTime(const string& value) const {
+        if (value.size() != 5 || value[2] != ':')
+            return -1;
+
+        int hour = (value[0] - '0') * 10 + (value[1] - '0');
+        int minute = (value[3] - '0') * 10 + (value[4] - '0');
+
+        if (hour < 0 || hour > 23 || minute < 0 || minute > 59)
+            return -1;
+
+        return hour * 60 + minute;
+    }
+
+    bool validDate(const string& value) const {
+        if (value.size() != 10 || value[4] != '-' || value[7] != '-')
+            return false;
+
+        for (int i = 0; i < 10; i++) {
+            if (i == 4 || i == 7)
+                continue;
+
+            if (value[i] < '0' || value[i] > '9')
+                return false;
+        }
+
+        int month = stoi(value.substr(5, 2));
+        int day = stoi(value.substr(8, 2));
+
+        if (month < 1 || month > 12 || day < 1 || day > 31)
+            return false;
+
+        return true;
+    }
+
+    bool examsClash(const ExamEntry& first,
+                    const ExamEntry& second) const {
+        if (first.date != second.date)
+            return false;
+
+        int firstTime = parseTime(first.time);
+        int secondTime = parseTime(second.time);
+
+        if (firstTime == -1 || secondTime == -1)
+            return false;
+
+        // Each exam is treated as a one-hour slot.
+        return firstTime < secondTime + 60 &&
+               secondTime < firstTime + 60;
+    }
+
+    void notifyStudentsAboutExam(const ExamEntry& exam,
+                                 bool updateNotice) {
+        for (const auto& student : students) {
+            if (!isEnrolled(student.id, exam.course))
+                continue;
+
+            string message = updateNotice
+                ? "Exam update: " + exam.course + " is on " +
+                  exam.date + " at " + exam.time +
+                  " in " + exam.venue + "."
+                : "Exam published: " + exam.course + " is on " +
+                  exam.date + " at " + exam.time +
+                  " in " + exam.venue + ".";
+
+            notifications.push_back({student.id, message});
+        }
+    }
+
+    void notifyControllerAboutClashes() {
+        for (const auto& student : students) {
+            vector<int> studentExams;
+
+            for (int i = 0; i < static_cast<int>(exams.size()); i++) {
+                if (!exams[i].published ||
+                    !isEnrolled(student.id, exams[i].course))
+                    continue;
+
+                studentExams.push_back(i);
+            }
+
+            for (int i = 0; i < static_cast<int>(studentExams.size()); i++) {
+                for (int j = i + 1;
+                     j < static_cast<int>(studentExams.size()); j++) {
+
+                    const ExamEntry& first = exams[studentExams[i]];
+                    const ExamEntry& second = exams[studentExams[j]];
+
+                    if (examsClash(first, second)) {
+                        notifications.push_back({
+                            0,
+                            "CONTROLLER ALERT: Student " +
+                            to_string(student.id) +
+                            " has a clash between " +
+                            first.course + " and " + second.course + "."
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+public:
+    ExamManager() {
+        students.push_back({101, "Ali", "BSE-2B"});
+        students.push_back({102, "Ahmed", "BSE-2B"});
+        students.push_back({103, "Hamza", "BSE-2B"});
+        students.push_back({104, "Usman", "BSE-2B"});
+    }
+
+    void createDatesheet() {
+        int count;
+
+        cout << "\nHow many exam entries do you want to add? ";
+        cin >> count;
+
+        if (count <= 0) {
+            cout << "Number of entries must be greater than zero.\n";
+            return;
+        }
+
+        for (int i = 0; i < count; i++) {
+            ExamEntry exam;
+
+            cout << "\nExam " << i + 1 << "\n";
+            cout << "Course: ";
+            cin >> exam.course;
+
+            cout << "Date (YYYY-MM-DD): ";
+            cin >> exam.date;
+
+            cout << "Time (HH:MM): ";
+            cin >> exam.time;
+
+            cout << "Venue: ";
+            cin.ignore();
+            getline(cin, exam.venue);
+
+            if (!validDate(exam.date) || parseTime(exam.time) == -1) {
+                cout << "Invalid date or time. Entry was not added.\n";
+                i--;
+                continue;
+            }
+
+            exam.published = false;
+            exams.push_back(exam);
+        }
+
+        cout << "\nDatesheet saved as DRAFT.\n";
+        cout << "It is not visible to students until published.\n";
+    }
+
+    void viewDatesheet(bool includeDrafts) const {
+        cout << "\n========== EXAM DATESHEET ==========\n";
+
+        bool found = false;
+
+        for (const auto& exam : exams) {
+            if (!includeDrafts && !exam.published)
+                continue;
+
+            cout << "Course: " << exam.course
+                 << " | Date: " << exam.date
+                 << " | Time: " << exam.time
+                 << " | Venue: " << exam.venue
+                 << " | Status: "
+                 << (exam.published ? "PUBLISHED" : "DRAFT")
+                 << "\n";
+
+            found = true;
+        }
+
+        if (!found)
+            cout << "No exam entries found.\n";
+
+        cout << "=====================================\n";
+    }
+
+    void publishDatesheet() {
+        bool publishedSomething = false;
+
+        for (auto& exam : exams) {
+            if (exam.published)
+                continue;
+
+            exam.published = true;
+            publishedSomething = true;
+            notifyStudentsAboutExam(exam, false);
+        }
+
+        if (!publishedSomething) {
+            cout << "There are no draft exams to publish.\n";
+            return;
+        }
+
+        notifyControllerAboutClashes();
+
+        cout << "\nDatesheet published successfully.\n";
+        cout << "Affected students were notified.\n";
+        cout << "The system also checked for exam clashes.\n";
+    }
+
+    void unpublishDatesheet() {
+        bool changed = false;
+
+        for (auto& exam : exams) {
+            if (!exam.published)
+                continue;
+
+            exam.published = false;
+            changed = true;
+        }
+
+        if (!changed) {
+            cout << "No published exams found.\n";
+            return;
+        }
+
+        cout << "Datesheet unpublished. Controller can now edit the draft.\n";
+    }
+
+    void editExam() {
+        string course;
+        cout << "Enter course to edit: ";
+        cin >> course;
+
+        for (auto& exam : exams) {
+            if (exam.course != course)
+                continue;
+
+            bool wasPublished = exam.published;
+
+            cout << "New date (YYYY-MM-DD): ";
+            cin >> exam.date;
+
+            cout << "New time (HH:MM): ";
+            cin >> exam.time;
+
+            cout << "New venue: ";
+            cin.ignore();
+            getline(cin, exam.venue);
+
+            if (!validDate(exam.date) || parseTime(exam.time) == -1) {
+                cout << "Invalid date or time. Edit cancelled.\n";
+                return;
+            }
+
+            exam.published = false;
+
+            if (wasPublished) {
+                cout << "Published exam changed. It is now a draft.\n";
+                cout << "Publish it again to notify affected students.\n";
+            }
+            else {
+                cout << "Exam draft updated successfully.\n";
+            }
+
+            return;
+        }
+
+        cout << "Course not found in datesheet.\n";
+    }
+
+    void viewStudentSchedule(int studentId) {
+        Student* student = findStudent(studentId);
+
+        if (student == nullptr) {
+            cout << "Student not found.\n";
+            return;
+        }
+
+        vector<ExamEntry> schedule;
+
+        for (const auto& exam : exams) {
+            if (exam.published && isEnrolled(studentId, exam.course))
+                schedule.push_back(exam);
+        }
+
+        sort(schedule.begin(), schedule.end(),
+             [](const ExamEntry& a, const ExamEntry& b) {
+                 if (a.date != b.date)
+                     return a.date < b.date;
+                 return a.time < b.time;
+             });
+
+        cout << "\n====== STUDENT EXAM SCHEDULE ======\n";
+        cout << "Student: " << student->name
+             << " (" << student->id << ")\n";
+
+        if (schedule.empty()) {
+            cout << "No published exams for this student.\n";
+            cout << "===================================\n";
+            return;
+        }
+
+        for (const auto& exam : schedule) {
+            cout << exam.course
+                 << " | " << exam.date
+                 << " | " << exam.time
+                 << " | " << exam.venue << "\n";
+        }
+
+        cout << "===================================\n";
+    }
+
+    void detectStudentClashes(int studentId) {
+        Student* student = findStudent(studentId);
+
+        if (student == nullptr) {
+            cout << "Student not found.\n";
+            return;
+        }
+
+        vector<ExamEntry> schedule;
+
+        for (const auto& exam : exams) {
+            if (exam.published && isEnrolled(studentId, exam.course))
+                schedule.push_back(exam);
+        }
+
+        bool found = false;
+
+        cout << "\n========== CLASH CHECK ==========\n";
+
+        for (int i = 0; i < static_cast<int>(schedule.size()); i++) {
+            for (int j = i + 1; j < static_cast<int>(schedule.size()); j++) {
+                if (examsClash(schedule[i], schedule[j])) {
+                    cout << "CLASH: " << schedule[i].course
+                         << " and " << schedule[j].course
+                         << " on " << schedule[i].date
+                         << " around " << schedule[i].time << ".\n";
+                    found = true;
+                }
+            }
+        }
+
+        if (!found)
+            cout << "No exam clashes detected.\n";
+
+        cout << "================================\n";
+    }
+
+    void enterResult() {
+        int studentId;
+        double marks;
+        double maximumMarks;
+        string course;
+
+        cout << "Student ID: ";
+        cin >> studentId;
+
+        if (findStudent(studentId) == nullptr) {
+            cout << "Student not found.\n";
+            return;
+        }
+
+        cout << "Course: ";
+        cin >> course;
+
+        if (!isEnrolled(studentId, course)) {
+            cout << "Student is not enrolled in this course.\n";
+            return;
+        }
+
+        cout << "Maximum marks: ";
+        cin >> maximumMarks;
+
+        cout << "Obtained marks: ";
+        cin >> marks;
+
+        if (maximumMarks <= 0 || marks < 0 || marks > maximumMarks) {
+            cout << "Invalid marks. Obtained marks must be between 0 and maximum marks.\n";
+            return;
+        }
+
+        bool updated = false;
+
+        for (auto& result : results) {
+            if (result.studentId == studentId &&
+                result.course == course &&
+                !result.finalized) {
+
+                result.marks = marks;
+                result.maximumMarks = maximumMarks;
+                updated = true;
+                break;
+            }
+        }
+
+        if (!updated) {
+            results.push_back({
+                studentId, course, marks, maximumMarks, false
+            });
+        }
+
+        cout << "Result entered successfully as a draft.\n";
+    }
+
+    void uploadResultsFile() {
+        string fileName;
+        cout << "Enter results file name: ";
+        cin >> fileName;
+
+        ifstream file(fileName);
+
+        if (!file) {
+            cout << "Could not open results file.\n";
+            cout << "Expected format: studentId,course,marks,maxMarks\n";
+            return;
+        }
+
+        string line;
+        int imported = 0;
+        int rejected = 0;
+
+        while (getline(file, line)) {
+            if (line.empty())
+                continue;
+
+            stringstream stream(line);
+            string studentText;
+            string course;
+            string marksText;
+            string maximumText;
+
+            getline(stream, studentText, ',');
+            getline(stream, course, ',');
+            getline(stream, marksText, ',');
+            getline(stream, maximumText, ',');
+
+            try {
+                int studentId = stoi(studentText);
+                double marks = stod(marksText);
+                double maximumMarks = stod(maximumText);
+
+                if (findStudent(studentId) == nullptr ||
+                    !isEnrolled(studentId, course) ||
+                    maximumMarks <= 0 ||
+                    marks < 0 ||
+                    marks > maximumMarks) {
+                    rejected++;
+                    continue;
+                }
+
+                results.push_back({
+                    studentId, course, marks, maximumMarks, false
+                });
+
+                imported++;
+            }
+            catch (...) {
+                rejected++;
+            }
+        }
+
+        cout << "Results imported: " << imported << "\n";
+        cout << "Invalid rows rejected: " << rejected << "\n";
+    }
+
+    void finalizeResults() {
+        int finalizedCount = 0;
+
+        for (auto& result : results) {
+            if (!result.finalized) {
+                result.finalized = true;
+                finalizedCount++;
+            }
+        }
+
+        cout << "Results finalized: " << finalizedCount << "\n";
+        cout << "Finalized results are now visible to students.\n";
+    }
+
+    void correctResult() {
+        int studentId;
+        string course;
+
+        cout << "Student ID: ";
+        cin >> studentId;
+
+        cout << "Course: ";
+        cin >> course;
+
+        for (auto& result : results) {
+            if (result.studentId == studentId &&
+                result.course == course) {
+
+                if (result.finalized) {
+                    cout << "Finalized result cannot be corrected through this draft option.\n";
+                    return;
+                }
+
+                cout << "New marks: ";
+                cin >> result.marks;
+
+                if (result.marks < 0 ||
+                    result.marks > result.maximumMarks) {
+                    cout << "Invalid marks.\n";
+                    return;
+                }
+
+                cout << "Result corrected successfully.\n";
+                return;
+            }
+        }
+
+        cout << "Draft result not found.\n";
+    }
+
+    void viewStudentResults(int studentId) const {
+        const Student* student = nullptr;
+
+        for (const auto& item : students) {
+            if (item.id == studentId) {
+                student = &item;
+                break;
+            }
+        }
+
+        if (student == nullptr) {
+            cout << "Student not found.\n";
+            return;
+        }
+
+        cout << "\n========== EXAM RESULTS ==========\n";
+        cout << "Student: " << student->name
+             << " (" << student->id << ")\n";
+
+        bool found = false;
+
+        for (const auto& result : results) {
+            if (result.studentId != studentId || !result.finalized)
+                continue;
+
+            cout << result.course
+                 << " | Marks: " << fixed << setprecision(2)
+                 << result.marks << "/" << result.maximumMarks
+                 << "\n";
+            found = true;
+        }
+
+        if (!found)
+            cout << "No finalized results are available.\n";
+
+        cout << "==================================\n";
+    }
+
+    void viewNotifications(int studentId) const {
+        cout << "\n====== EXAM NOTIFICATIONS ======\n";
+
+        bool found = false;
+
+        for (const auto& notification : notifications) {
+            if (notification.studentId != studentId)
+                continue;
+
+            cout << "- " << notification.message << "\n";
+            found = true;
+        }
+
+        if (!found)
+            cout << "No notifications found.\n";
+
+        cout << "================================\n";
+    }
+
+    void run() {
+        int choice;
+
+        do {
+            cout << "\n========== UMS EXAM MANAGEMENT ==========\n";
+            cout << "1. Create / Save Datesheet as Draft\n";
+            cout << "2. View Draft / Published Datesheet\n";
+            cout << "3. Publish Datesheet\n";
+            cout << "4. Unpublish Datesheet\n";
+            cout << "5. Edit Exam Entry\n";
+            cout << "6. View Student Exam Schedule\n";
+            cout << "7. Detect Student Exam Clashes\n";
+            cout << "8. Enter Result Manually\n";
+            cout << "9. Upload Results File\n";
+            cout << "10. Correct Draft Result\n";
+            cout << "11. Finalize Results\n";
+            cout << "12. View Student Results\n";
+            cout << "13. View Exam Notifications\n";
+            cout << "0. Back\n";
+            cout << "Choose an option: ";
+            cin >> choice;
+
+            if (choice == 1) {
+                createDatesheet();
+            }
+            else if (choice == 2) {
+                viewDatesheet(true);
+            }
+            else if (choice == 3) {
+                publishDatesheet();
+            }
+            else if (choice == 4) {
+                unpublishDatesheet();
+            }
+            else if (choice == 5) {
+                editExam();
+            }
+            else if (choice == 6) {
+                int id;
+                cout << "Student ID: ";
+                cin >> id;
+                viewStudentSchedule(id);
+            }
+            else if (choice == 7) {
+                int id;
+                cout << "Student ID: ";
+                cin >> id;
+                detectStudentClashes(id);
+            }
+            else if (choice == 8) {
+                enterResult();
+            }
+            else if (choice == 9) {
+                uploadResultsFile();
+            }
+            else if (choice == 10) {
+                correctResult();
+            }
+            else if (choice == 11) {
+                finalizeResults();
+            }
+            else if (choice == 12) {
+                int id;
+                cout << "Student ID: ";
+                cin >> id;
+                viewStudentResults(id);
+            }
+            else if (choice == 13) {
+                int id;
+                cout << "Student ID: ";
+                cin >> id;
+                viewNotifications(id);
+            }
+            else if (choice != 0) {
+                cout << "Invalid option.\n";
+            }
+
+        } while (choice != 0);
+    }
+};
+
+
 int main() {
-    FeeManager manager;
-    manager.run();
+    FeeManager feeManager;
+    ExamManager examManager;
+    int choice;
+
+    do {
+        cout << "\n========== UNIVERSITY MANAGEMENT SYSTEM ==========\n";
+        cout << "1. Fee Management\n";
+        cout << "2. Exam Management\n";
+        cout << "0. Exit\n";
+        cout << "Choose an option: ";
+        cin >> choice;
+
+        if (choice == 1)
+            feeManager.run();
+        else if (choice == 2)
+            examManager.run();
+        else if (choice != 0)
+            cout << "Invalid option.\n";
+
+    } while (choice != 0);
+
+    cout << "University Management System closed.\n";
     return 0;
 }
