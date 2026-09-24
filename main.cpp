@@ -662,6 +662,31 @@ struct ExamResult {
     bool finalized;
 };
 
+bool examsOverlap(const string& firstDate, const string& firstTime,
+                  const string& secondDate, const string& secondTime) {
+    if (firstDate != secondDate)
+        return false;
+
+    auto parseTimeValue = [](const string& value) {
+        if (value.size() != 5 || value[2] != ':')
+            return -1;
+        int hour = (value[0] - '0') * 10 + (value[1] - '0');
+        int minute = (value[3] - '0') * 10 + (value[4] - '0');
+        if (hour < 0 || hour > 23 || minute < 0 || minute > 59)
+            return -1;
+        return hour * 60 + minute;
+    };
+
+    int firstMinutes = parseTimeValue(firstTime);
+    int secondMinutes = parseTimeValue(secondTime);
+
+    if (firstMinutes == -1 || secondMinutes == -1)
+        return false;
+
+    return firstMinutes < secondMinutes + 60 &&
+           secondMinutes < firstMinutes + 60;
+}
+
 class ExamManager {
 private:
     vector<Student> students;
@@ -744,18 +769,8 @@ private:
 
     bool examsClash(const ExamEntry& first,
                     const ExamEntry& second) const {
-        if (first.date != second.date)
-            return false;
-
-        int firstTime = parseTime(first.time);
-        int secondTime = parseTime(second.time);
-
-        if (firstTime == -1 || secondTime == -1)
-            return false;
-
-        // Each exam is treated as a one-hour slot.
-        return firstTime < secondTime + 60 &&
-               secondTime < firstTime + 60;
+        return examsOverlap(first.date, first.time,
+                            second.date, second.time);
     }
 
     void notifyStudentsAboutExam(const ExamEntry& exam,
