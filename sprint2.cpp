@@ -81,6 +81,48 @@ class ExaminationSystem {
     vector<Exam> draft, published;
     NotificationSystem& notifications;
 
+    bool validDate(const string& value) const {
+        if (value.size() != 10 || value[4] != '-' || value[7] != '-')
+            return false;
+
+        for (int i = 0; i < 10; i++) {
+            if (i == 4 || i == 7)
+                continue;
+            if (value[i] < '0' || value[i] > '9')
+                return false;
+        }
+
+        int year = stoi(value.substr(0, 4));
+        int month = stoi(value.substr(5, 2));
+        int day = stoi(value.substr(8, 2));
+
+        if (year < 1 || month < 1 || month > 12 || day < 1)
+            return false;
+
+        int days[] = {31,28,31,30,31,30,31,31,30,31,30,31};
+        bool leap = (year % 400 == 0) || (year % 4 == 0 && year % 100 != 0);
+        if (leap)
+            days[1] = 29;
+
+        return day <= days[month - 1];
+    }
+
+    bool validTime(const string& value) const {
+        if (value.size() != 5 || value[2] != ':')
+            return false;
+
+        for (int i = 0; i < 5; i++) {
+            if (i == 2)
+                continue;
+            if (value[i] < '0' || value[i] > '9')
+                return false;
+        }
+
+        int hour = stoi(value.substr(0, 2));
+        int minute = stoi(value.substr(3, 2));
+        return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+    }
+
     void print(const vector<Exam>& list) const {
         cout << "\n===== EXAM DATESHEET =====\n";
         if (list.empty()) {
@@ -101,6 +143,12 @@ public:
     // UMS-29: Build and save a datesheet entry from the exam form.\n    void addExam(const string& course, const string& date,
                  const string& time, const string& venue,
                  const vector<int>& ids) {
+        if (course.empty() || venue.empty() ||
+            !validDate(date) || !validTime(time)) {
+            cout << "Invalid course, venue, date, or time. Exam was not saved.\n";
+            return;
+        }
+
         draft.push_back({course, date, time, venue, ids});
         cout << "Exam saved as draft.\n";
     }
@@ -145,7 +193,17 @@ public:
         published[index].course = course;
         published[index].date = date;
         published[index].time = time;
+        if (course.empty() || venue.empty() ||
+            !validDate(date) || !validTime(time)) {
+            cout << "Invalid course, venue, date, or time. Exam was not updated.\n";
+            return;
+        }
+
         published[index].venue = venue;
+
+        if (index < static_cast<int>(draft.size())) {
+            draft[index] = published[index];
+        }
 
         notifications.sendToStudents(
             published[index].studentIds, notificationDate,
@@ -259,8 +317,13 @@ int main() {
             string section, date, title, message;
             cout << "Batch/section: "; cin >> section;
             cout << "Date: "; cin >> date;
-            cout << "Title: "; cin >> title;
-            cout << "Message: "; cin >> message;
+            cin.ignore();
+
+            cout << "Title: ";
+            getline(cin, title);
+
+            cout << "Message: ";
+            getline(cin, message);
 
             announcements.send(
                 students, section, date, title, message
