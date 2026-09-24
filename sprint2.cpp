@@ -98,7 +98,7 @@ class ExaminationSystem {
 public:
     ExaminationSystem(NotificationSystem& n) : notifications(n) {}
 
-    void addExam(const string& course, const string& date,
+    // UMS-29: Build and save a datesheet entry from the exam form.\n    void addExam(const string& course, const string& date,
                  const string& time, const string& venue,
                  const vector<int>& ids) {
         draft.push_back({course, date, time, venue, ids});
@@ -108,7 +108,7 @@ public:
     void showDraft() const { print(draft); }
     void showPublished() const { print(published); }
 
-    void publish(const string& notificationDate) {
+    // UMS-30: Publish/unpublish toggle is represented by published datesheet state.\n    void publish(const string& notificationDate) {
         if (draft.empty()) {
             cout << "Draft is empty.\n";
             return;
@@ -156,7 +156,7 @@ public:
         cout << "Exam updated and affected students notified.\n";
     }
 
-    void unpublish() {
+    // UMS-30: Return the datesheet to an unpublished state.\n    void unpublish() {
         published.clear();
         cout << "Datesheet unpublished.\n";
     }
