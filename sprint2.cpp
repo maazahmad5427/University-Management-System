@@ -72,11 +72,6 @@ public:
         for (int id : ids) {
             bool duplicate = false;
 
-            for (int previousId : ids) {
-                if (previousId == id)
-                    break;
-            }
-
             for (const auto& item : items) {
                 if (item.studentId == id &&
                     item.date == date &&
